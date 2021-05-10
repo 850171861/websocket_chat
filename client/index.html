@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+  <script src="https://cdn.jsdelivr.net/npm/vue/dist/vue.js"></script>
+</head>
+
+<body>
+  <div id="app">
+    <div v-if="isShow">
+      <p>昵称:<input type="text" v-model="name"></p>
+      <p>房间号:<input type="text" v-model="id"></p>
+      <button type="button" @click="enter()">进入聊天室</button>
+    </div>
+    <div v-else>
+      <ul>
+        <li v-for="(item,index) in lists" ::key="index">
+          {{item}}
+        </li>
+        <li>在线人数{{num}}</li>
+      </ul>
+      <div class="box">
+        <input type="text" v-model="message">
+        <button type="button" @click="send()">按钮</button>
+      </div>
+    </div>
+
+
+  </div>
+  <script>
+    var app = new Vue({
+      el: '#app',
+      data: {
+        message: '',
+        lists: [],
+        ws: {},
+        name: '',
+        id: '',
+        isShow: true,
+        num: 0,
+        handle: {}
+      },
+      methods: {
+        init() {
+          // 初始化socket
+          this.ws = new WebSocket('ws://127.0.0.1:3000')
+          // 连接
+          this.ws.onopen = this.onOpen
+          // 信息
+          this.ws.onmessage = this.onMessage
+          // 关闭
+          this.ws.onclose = this.onClose
+          // 错误
+          this.ws.onerror = this.onError
+        },
+        // 进入聊天室
+        enter() {
+          if (this.name.trim() === '') {
+            alert('用户名不能为空')
+            return
+          }
+          this.init()
+          this.isShow = false
+        },
+        onOpen: function () {
+
+          // 发起鉴权
+          this.ws.send(JSON.stringify({
+            event: 'auth',
+            message: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6Imltb29jIiwiaWF0IjoxNTE2MjM5MDIyfQ.KQv-KO2KRPtFP1Hl9h3qyxiko8Czz_7vWVm-5JcyP7k'
+          }))
+          this.ws.send(JSON.stringify({
+            event: 'enter',
+            message: this.name,
+            id: this.id
+          }))
+          // console.log('open:' + this.ws.readyState)
+
+        },
+        // 接受服务端端消息，追加到lists数组
+        onMessage: function (event) {
+          // 没有进入聊天室不接受消息
+          if (this.isShow) {
+            return
+          }
+          var obj = JSON.parse(event.data)
+          switch (obj.event) {
+            // 鉴权失败
+            case 'noauth':
+              break;
+              // 当前有用户进入聊天室
+            case 'enter':
+              this.lists.push('欢迎:' + obj.name + obj.message)
+              break;
+              // 用户退出聊天室
+            case 'out':
+              this.lists.push(obj.name + '离开聊天室')
+              break;
+              // 心跳检测
+            case 'heartbeat':
+              this.checkServer() // timeIntrval + t 时间内接收到请求
+              this.ws.send(JSON.stringify({
+                event: 'heartbeat',
+                message: 'pong'
+              }))
+              break;
+            default:
+              if (obj.name !== this.name) {
+                this.lists.push(obj.name + ':' + obj.message)
+              }
+
+          }
+          if (obj.event === 'noauth') {
+            // 鉴权失败
+            // 路由跳转
+          }
+
+          this.num = obj.num
+        },
+        // 当连接主动断开的时候触发close事件
+        onClose: function () {
+          console.log('关闭连接', this.ws.readyState)
+          this.ws.close()
+        },
+        // 连接失败时,触发error事件
+        onError: function () {
+          console.log('连接失败' + this.ws.readyState)
+          // 连接失败后，1秒进行断线重连
+          var _this = this
+          setTimeout(function () {
+            _this.init()
+          }, 1000)
+        },
+        // 发送信息
+        send: function () {
+          this.lists.push(this.name + ':' + this.message)
+          this.ws.send(JSON.stringify({
+            event: 'message',
+            message: this.message,
+            naem: this.name
+          }))
+          this.message = ''
+        },
+        checkServer: function () {
+          var _this = this
+          clearTimeout(this.handle)
+          this.handle = setTimeout(function () {
+            _this.onClose()
+            setTimeout(function () {
+              _this.init()
+            }, 3000)
+          }, 1000 + 1)
+        }
+      },
+
+    })
+  </script>
+</body>
+
+</html>
